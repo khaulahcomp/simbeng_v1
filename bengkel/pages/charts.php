@@ -12,7 +12,7 @@ $label = str_replace(['Mingguan', 'Harian'], 'Periode', $label);
 $stmt = db()->prepare("SELECT c.nama, COUNT(t.id) AS jml, COALESCE(SUM(t.grand_total),0) AS total
     FROM transactions t
     JOIN customers c ON c.id = t.customer_id
-    WHERE date(t.created_at, '+7 hours') BETWEEN ? AND ?
+    WHERE DATE(t.created_at + INTERVAL 7 HOUR) BETWEEN ? AND ?
     GROUP BY t.customer_id
     ORDER BY total DESC, jml DESC
     LIMIT 10");

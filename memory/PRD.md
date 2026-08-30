@@ -1,14 +1,14 @@
 # PRD - Sistem Manajemen Bengkel Motor
 
 ## Problem Statement (Ringkasan)
-Aplikasi web manajemen bengkel motor: PHP native + SQLite (bengkel.db auto-create), Bootstrap 5 via CDN, siap hosting cPanel/XAMPP. Modul: Dashboard statistik, Pelanggan & Kendaraan, Inventory Sparepart (input manual, import Excel, scan barcode kamera/USB, barang masuk/keluar, low stock alert), Kasir/POS + cetak struk, Data Supplier, Klaim Garansi (kode GRS-, cari nota, ubah status, penggantian part otomatis potong stok, cetak bukti), login multi-user.
+Aplikasi web manajemen bengkel motor: PHP native + MySQL/MariaDB, Bootstrap 5 via CDN, siap hosting cPanel/XAMPP. Modul: Dashboard statistik, Pelanggan & Kendaraan, Inventory Sparepart (input manual, import Excel, scan barcode kamera/USB, barang masuk/keluar, low stock alert), Kasir/POS + cetak struk + notifikasi WhatsApp pelanggan, Data Supplier, Klaim Garansi (kode GRS-, cari nota, ubah status, penggantian part otomatis potong stok, cetak bukti), login multi-user.
 
 ## Arsitektur
-- PHP 8.2 native (tanpa framework), PDO SQLite, session-based auth (password_hash).
+- PHP 8.2 native (tanpa framework), PDO MySQL, session-based auth (password_hash).
 - Router tunggal `index.php?page=...`; layout sidebar di `includes/header.php`.
-- Lokasi kode: `/app/bengkel/` (includes/, pages/, ajax/, bengkel.db, README.md).
-- Preview: PHP built-in server di port 3000 (`php -S 0.0.0.0:3000 -t /app/bengkel`); frontend React dihentikan. Endpoint AJAX di `/ajax/` (bukan `/api/` karena ingress mengarahkan /api ke FastAPI:8001).
-- DB SQLite: `/app/bengkel/bengkel.db` (auto-create + seed admin).
+- Lokasi kode: `/app/bengkel/` (includes/, pages/, ajax/, config.php, migrate_sqlite_to_mysql.php, README.md).
+- Database MySQL/MariaDB; kredensial di `includes/config.php` (env-overridable; default XAMPP: localhost/root/kosong, db `bengkel`). Skema InnoDB + utf8mb4, FK aktif, timestamp disimpan UTC (SET time_zone '+00:00') lalu dikonversi ke WIB via helper `lokal()`.
+- Preview (Emergent): supervisor `php-bengkel` menjalankan `php -S 0.0.0.0:3000 -t /app/bengkel`; supervisor `mariadb` (127.0.0.1:3306, db=bengkel, user=bengkel_user). Endpoint AJAX di `/ajax/` (bukan `/api/`).
 
 ## User Personas
 - Admin: kelola semua modul + manajemen pengguna.
@@ -25,7 +25,9 @@ Aplikasi web manajemen bengkel motor: PHP native + SQLite (bengkel.db auto-creat
 7. Klaim garansi: GRS-YYYYMM-NNN, cari nota (nota/plat/nama), status pending/diproses/disetujui/ditolak, part pengganti potong stok, cetak bukti klaim.
 
 ## Yang Sudah Diimplementasikan (2026-06)
-- Seluruh 7 modul core di atas, dalam PHP native + SQLite.
+- Seluruh 7 modul core, dalam PHP native.
+- MIGRASI DATABASE SQLite -> MySQL/MariaDB (2026-08): includes/db.php (PDO MySQL, skema InnoDB/utf8mb4, FK, SET time_zone UTC), includes/config.php (kredensial mudah diedit untuk cPanel/XAMPP, auto_create_database), konversi seluruh sintaks SQLite ke MySQL. Skrip migrate_sqlite_to_mysql.php untuk memindahkan data lama. README diperbarui (panduan MySQL cPanel/XAMPP). Teruji lolos via testing agent.
+- NOTIFIKASI WHATSAPP PELANGGAN (2026-08): tombol "Kirim WhatsApp" (wa.me click-to-chat, gratis tanpa API) di struk/nota (pages/receipt.php). Nomor HP dinormalisasi (0->62, tanpa +). Pesan otomatis: nama bengkel, sapaan+nama pelanggan, no nota, tanggal WIB, total, info garansi. Tombol non-aktif bila telepon pelanggan kosong. Opsi kirim/tidak di tangan admin.
 - Master Kategori Sparepart: CRUD kategori (pages/categories.php), dropdown kategori pada form sparepart, auto-register kategori baru saat import Excel.
 - Rekap & Laporan (pages/reports.php): filter harian/mingguan/bulanan/tahunan/custom (dari-sampai tanggal), ringkasan jumlah transaksi + total jasa/sparepart/pendapatan.
 - Export laporan (export.php): transaksi & daftar sparepart dalam format Excel (.xls), Word (.doc), PDF (print-view Save as PDF) — tanpa library eksternal agar tetap kompatibel cPanel/XAMPP.

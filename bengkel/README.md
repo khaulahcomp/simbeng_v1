@@ -1,37 +1,51 @@
-# Sistem Manajemen Bengkel Motor (PHP Native + SQLite)
+# Sistem Manajemen Bengkel Motor (PHP Native + MySQL)
 
-Aplikasi web manajemen bengkel motor: dashboard, pelanggan & kendaraan, inventory sparepart (barang masuk/keluar, import Excel, scan barcode), kasir/POS dengan cetak struk, data supplier, dan klaim garansi.
+Aplikasi web manajemen bengkel motor: dashboard, pelanggan & kendaraan, inventory sparepart (barang masuk/keluar, import Excel, scan barcode), kasir/POS dengan cetak struk, data supplier, klaim garansi, laporan/export, dan notifikasi WhatsApp ke pelanggan.
 
 ## Kebutuhan
-- PHP 7.4+ (atau PHP 8.x) dengan ekstensi `pdo_sqlite` / `sqlite3`
-- Tidak butuh MySQL, tidak butuh Composer
+- PHP 7.4+ (atau PHP 8.x) dengan ekstensi `pdo_mysql`
+- MySQL / MariaDB (tersedia bawaan di XAMPP dan cPanel shared hosting)
+- Tidak butuh Composer
+
+## Konfigurasi Database (WAJIB)
+Edit file **`includes/config.php`** sesuai data database Anda:
+```php
+'host' => 'localhost',            // umumnya 'localhost'
+'name' => 'bengkel',              // nama database
+'user' => 'root',                 // user database
+'pass' => '',                     // password database
+'auto_create_database' => true,   // XAMPP: true | cPanel: false
+```
+Tabel & akun admin default dibuat otomatis saat aplikasi pertama kali dibuka.
 
 ## Cara Menjalankan
 
 ### A. XAMPP (Windows/Mac/Linux)
-1. Install XAMPP, pastikan ekstensi SQLite aktif (default sudah aktif di `php.ini`: `extension=pdo_sqlite` dan `extension=sqlite3`).
+1. Install XAMPP, jalankan **Apache** dan **MySQL** dari Control Panel.
 2. Salin seluruh folder `bengkel/` ke `C:\xampp\htdocs\bengkel`.
-3. Jalankan Apache dari XAMPP Control Panel.
+3. Buka `includes/config.php`: host `localhost`, user `root`, pass kosong, name `bengkel`, `auto_create_database => true` (database dibuat otomatis). Atau buat manual di phpMyAdmin.
 4. Buka browser: `http://localhost/bengkel/`
 
 ### B. cPanel / Shared Hosting
-1. Upload seluruh isi folder `bengkel/` ke `public_html/` (atau subfolder, misal `public_html/bengkel/`).
-2. Pastikan versi PHP di cPanel >= 7.4 dan ekstensi SQLite aktif (menu "Select PHP Version" > centang `sqlite3` / `pdo_sqlite`).
-3. Pastikan folder aplikasi writable (permission 755/775) agar file `bengkel.db` bisa dibuat otomatis.
-4. Akses `https://domainanda.com/` atau `https://domainanda.com/bengkel/`.
+1. Buat database + user MySQL lewat menu **MySQL Databases** (catat nama db, user, password — biasanya berawalan nama akun, mis. `namauser_bengkel`). Beri user hak akses penuh ke database tersebut.
+2. Upload seluruh isi folder `bengkel/` ke `public_html/` (atau subfolder, mis. `public_html/bengkel/`).
+3. Edit `includes/config.php`: isi `name`, `user`, `pass` sesuai langkah 1, set `host => 'localhost'` dan **`auto_create_database => false`**.
+4. Pastikan versi PHP di cPanel >= 7.4 dengan ekstensi `pdo_mysql` aktif (menu "Select PHP Version").
+5. Akses `https://domainanda.com/` atau `https://domainanda.com/bengkel/` — tabel & admin dibuat otomatis saat halaman pertama dibuka.
 
-### C. Tanpa web server (PHP built-in, untuk tes lokal)
+### C. Memindahkan data lama dari SQLite (opsional)
+Jika Anda punya file `bengkel.db` (SQLite) lama dan ingin memindahkan datanya ke MySQL:
 ```bash
-cd bengkel
-php -S localhost:8000
+php migrate_sqlite_to_mysql.php
 ```
-Buka `http://localhost:8000`.
+Jalankan sekali setelah `config.php` diarahkan ke database MySQL tujuan.
 
 ## Login Default
 - Username: `admin`
 - Password: `admin123`
 
-Segera ganti password melalui menu **Pengguna** setelah login pertama. Database `bengkel.db` otomatis dibuat beserta akun admin saat aplikasi pertama kali diakses.
+Segera ganti password melalui menu **Pengguna** setelah login pertama. Tabel database & akun admin dibuat otomatis saat aplikasi pertama kali diakses.
+
 
 ## Struktur Folder
 ```

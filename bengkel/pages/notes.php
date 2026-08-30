@@ -23,7 +23,7 @@ if ($action === 'save') {
     $isi = trim($_POST['isi'] ?? '');
     $warna = in_array($_POST['warna'] ?? '', $warna_ok, true) ? $_POST['warna'] : 'kuning';
     if ($isi !== '') {
-        $db->prepare("UPDATE notes SET isi=?, warna=?, updated_at=datetime('now') WHERE id=?")->execute([$isi, $warna, $id]);
+        $db->prepare("UPDATE notes SET isi=?, warna=?, updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$isi, $warna, $id]);
         set_flash('success', 'Catatan diperbarui.');
     }
     header('Location: index.php?page=notes'); exit;

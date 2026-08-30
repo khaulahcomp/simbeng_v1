@@ -1,20 +1,52 @@
 <?php
 // ============================================================
-// db.php - Koneksi SQLite & skema database aplikasi bengkel.
-// File bengkel.db otomatis dibuat saat aplikasi pertama dijalankan.
+// db.php - Koneksi MySQL & skema database aplikasi bengkel.
+// Kredensial database diatur di includes/config.php (mudah diedit
+// untuk cPanel shared hosting / XAMPP). Skema tabel dibuat otomatis
+// saat aplikasi pertama dijalankan.
 // ============================================================
-
-define('DB_PATH', __DIR__ . '/../bengkel.db');
 
 // Zona waktu aplikasi (WIB) untuk seluruh fungsi date() PHP
 date_default_timezone_set('Asia/Jakarta');
 
+function db_config(): array {
+    static $cfg = null;
+    if ($cfg === null) $cfg = require __DIR__ . '/config.php';
+    return $cfg;
+}
+
 function db(): PDO {
     static $pdo = null;
     if ($pdo === null) {
-        $pdo = new PDO('sqlite:' . DB_PATH);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $pdo->exec('PRAGMA foreign_keys = ON');
+        $c = db_config();
+        $charset = $c['charset'] ?? 'utf8mb4';
+
+        // Coba buat database otomatis bila diizinkan (berguna di XAMPP).
+        // Di shared hosting yang user-nya tidak punya izin CREATE DATABASE,
+        // error diabaikan diam-diam (database dibuat manual via cPanel).
+        if (!empty($c['auto_create_database'])) {
+            try {
+                $tmp = new PDO(
+                    "mysql:host={$c['host']};port={$c['port']};charset=$charset",
+                    $c['user'], $c['pass'],
+                    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+                );
+                $tmp->exec("CREATE DATABASE IF NOT EXISTS `{$c['name']}` CHARACTER SET $charset COLLATE {$charset}_unicode_ci");
+                $tmp = null;
+            } catch (PDOException $e) {
+                // abaikan: kemungkinan database sudah ada / tanpa izin CREATE
+            }
+        }
+
+        $dsn = "mysql:host={$c['host']};port={$c['port']};dbname={$c['name']};charset=$charset";
+        $pdo = new PDO($dsn, $c['user'], $c['pass'], [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        ]);
+        // Simpan seluruh timestamp dalam UTC agar konsisten dengan helper
+        // lokal() (konversi UTC -> WIB) di seluruh aplikasi. Dibungkus try/catch
+        // agar tetap jalan di shared hosting yang membatasi SET time_zone.
+        try { $pdo->exec("SET time_zone = '+00:00'"); } catch (PDOException $e) { /* abaikan */ }
     }
     return $pdo;
 }
@@ -22,122 +54,147 @@ function db(): PDO {
 // Buat seluruh tabel (jika belum ada) + seed akun admin default
 function init_db(): void {
     $db = db();
+    $eng = "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
     $db->exec("CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        nama TEXT NOT NULL,
-        role TEXT NOT NULL DEFAULT 'kasir',
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(100) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        nama VARCHAR(150) NOT NULL,
+        role VARCHAR(20) NOT NULL DEFAULT 'kasir',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS customers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nama TEXT NOT NULL,
-        telepon TEXT DEFAULT '',
-        alamat TEXT DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nama VARCHAR(150) NOT NULL,
+        telepon VARCHAR(40) NOT NULL DEFAULT '',
+        alamat VARCHAR(500) NOT NULL DEFAULT '',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS vehicles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-        merek TEXT NOT NULL,
-        model TEXT DEFAULT '',
-        plat_nomor TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT NOT NULL,
+        merek VARCHAR(100) NOT NULL,
+        model VARCHAR(100) NOT NULL DEFAULT '',
+        plat_nomor VARCHAR(30) NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (customer_id),
+        CONSTRAINT fk_vehicles_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS suppliers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nama TEXT NOT NULL,
-        telepon TEXT DEFAULT '',
-        email TEXT DEFAULT '',
-        alamat TEXT DEFAULT '',
-        keterangan TEXT DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nama VARCHAR(150) NOT NULL,
+        telepon VARCHAR(40) NOT NULL DEFAULT '',
+        email VARCHAR(150) NOT NULL DEFAULT '',
+        alamat VARCHAR(500) NOT NULL DEFAULT '',
+        keterangan VARCHAR(500) NOT NULL DEFAULT '',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS parts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        kode TEXT UNIQUE NOT NULL,
-        barcode TEXT DEFAULT '',
-        nama TEXT NOT NULL,
-        kategori TEXT DEFAULT '',
-        harga_beli REAL NOT NULL DEFAULT 0,
-        harga_jual REAL NOT NULL DEFAULT 0,
-        stok INTEGER NOT NULL DEFAULT 0,
-        stok_min INTEGER NOT NULL DEFAULT 5,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        kode VARCHAR(100) NOT NULL UNIQUE,
+        barcode VARCHAR(100) NOT NULL DEFAULT '',
+        nama VARCHAR(200) NOT NULL,
+        kategori VARCHAR(150) NOT NULL DEFAULT '',
+        harga_beli DECIMAL(14,2) NOT NULL DEFAULT 0,
+        harga_jual DECIMAL(14,2) NOT NULL DEFAULT 0,
+        stok INT NOT NULL DEFAULT 0,
+        stok_min INT NOT NULL DEFAULT 5,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS stock_movements (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        part_id INTEGER NOT NULL REFERENCES parts(id),
-        tipe TEXT NOT NULL CHECK (tipe IN ('masuk','keluar')),
-        jumlah INTEGER NOT NULL,
-        supplier_id INTEGER REFERENCES suppliers(id),
-        ref_type TEXT DEFAULT '',
-        ref_id INTEGER,
-        keterangan TEXT DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        part_id INT NOT NULL,
+        tipe VARCHAR(10) NOT NULL,
+        jumlah INT NOT NULL,
+        supplier_id INT NULL,
+        ref_type VARCHAR(30) NOT NULL DEFAULT '',
+        ref_id INT NULL,
+        keterangan VARCHAR(500) NOT NULL DEFAULT '',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (part_id), INDEX (supplier_id),
+        CONSTRAINT fk_sm_part FOREIGN KEY (part_id) REFERENCES parts(id),
+        CONSTRAINT fk_sm_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        no_nota TEXT UNIQUE NOT NULL,
-        customer_id INTEGER NOT NULL REFERENCES customers(id),
-        vehicle_id INTEGER REFERENCES vehicles(id),
-        total_jasa REAL NOT NULL DEFAULT 0,
-        total_part REAL NOT NULL DEFAULT 0,
-        diskon REAL NOT NULL DEFAULT 0,
-        grand_total REAL NOT NULL DEFAULT 0,
-        status TEXT NOT NULL DEFAULT 'selesai',
-        catatan TEXT DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        no_nota VARCHAR(100) NOT NULL UNIQUE,
+        customer_id INT NOT NULL,
+        vehicle_id INT NULL,
+        total_jasa DECIMAL(14,2) NOT NULL DEFAULT 0,
+        total_part DECIMAL(14,2) NOT NULL DEFAULT 0,
+        diskon DECIMAL(14,2) NOT NULL DEFAULT 0,
+        grand_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+        status VARCHAR(20) NOT NULL DEFAULT 'selesai',
+        catatan VARCHAR(500) NOT NULL DEFAULT '',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (customer_id), INDEX (vehicle_id),
+        CONSTRAINT fk_trx_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+        CONSTRAINT fk_trx_vehicle FOREIGN KEY (vehicle_id) REFERENCES vehicles(id)
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS transaction_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-        tipe TEXT NOT NULL CHECK (tipe IN ('jasa','part')),
-        part_id INTEGER REFERENCES parts(id),
-        nama TEXT NOT NULL,
-        qty INTEGER NOT NULL DEFAULT 1,
-        harga REAL NOT NULL DEFAULT 0,
-        subtotal REAL NOT NULL DEFAULT 0,
-        garansi_hari INTEGER NOT NULL DEFAULT 0
-    )");
-    // Modul garansi: klaim terkait satu item pada satu nota transaksi
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        transaction_id INT NOT NULL,
+        tipe VARCHAR(10) NOT NULL,
+        part_id INT NULL,
+        nama VARCHAR(200) NOT NULL,
+        qty INT NOT NULL DEFAULT 1,
+        harga DECIMAL(14,2) NOT NULL DEFAULT 0,
+        subtotal DECIMAL(14,2) NOT NULL DEFAULT 0,
+        garansi_hari INT NOT NULL DEFAULT 0,
+        INDEX (transaction_id), INDEX (part_id),
+        CONSTRAINT fk_ti_trx FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+        CONSTRAINT fk_ti_part FOREIGN KEY (part_id) REFERENCES parts(id)
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS warranty_claims (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        kode TEXT UNIQUE NOT NULL,
-        transaction_id INTEGER NOT NULL REFERENCES transactions(id),
-        transaction_item_id INTEGER NOT NULL REFERENCES transaction_items(id),
-        customer_id INTEGER NOT NULL REFERENCES customers(id),
-        item_nama TEXT NOT NULL,
-        tgl_beli TEXT NOT NULL,
-        tgl_berakhir TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','diproses','disetujui','ditolak')),
-        alasan TEXT DEFAULT '',
-        catatan_teknisi TEXT DEFAULT '',
-        replacement_part_id INTEGER REFERENCES parts(id),
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
-    // Master kategori jenis sparepart (dipakai dropdown saat input sparepart)
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        kode VARCHAR(100) NOT NULL UNIQUE,
+        transaction_id INT NOT NULL,
+        transaction_item_id INT NOT NULL,
+        customer_id INT NOT NULL,
+        item_nama VARCHAR(200) NOT NULL,
+        tgl_beli VARCHAR(20) NOT NULL,
+        tgl_berakhir VARCHAR(20) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        alasan VARCHAR(500) NOT NULL DEFAULT '',
+        catatan_teknisi VARCHAR(500) NOT NULL DEFAULT '',
+        replacement_part_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (transaction_id), INDEX (transaction_item_id), INDEX (customer_id), INDEX (replacement_part_id),
+        CONSTRAINT fk_wc_trx FOREIGN KEY (transaction_id) REFERENCES transactions(id),
+        CONSTRAINT fk_wc_item FOREIGN KEY (transaction_item_id) REFERENCES transaction_items(id),
+        CONSTRAINT fk_wc_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+        CONSTRAINT fk_wc_part FOREIGN KEY (replacement_part_id) REFERENCES parts(id)
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nama TEXT UNIQUE NOT NULL,
-        keterangan TEXT DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
-    // Tabel pengaturan aplikasi (nama bengkel, NIB, pemilik, tema warna, dll.)
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nama VARCHAR(150) NOT NULL UNIQUE,
+        keterangan VARCHAR(500) NOT NULL DEFAULT '',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT DEFAULT ''
-    )");
-    // Sticky notes: catatan-catatan kecil untuk tim bengkel
+        `key` VARCHAR(100) PRIMARY KEY,
+        `value` TEXT NULL
+    ) $eng");
+
     $db->exec("CREATE TABLE IF NOT EXISTS notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INT AUTO_INCREMENT PRIMARY KEY,
         isi TEXT NOT NULL,
-        warna TEXT NOT NULL DEFAULT 'kuning',
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )");
+        warna VARCHAR(20) NOT NULL DEFAULT 'kuning',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) $eng");
 
     // Seed akun admin default (admin / admin123) jika tabel users kosong
     if ((int) db()->query("SELECT COUNT(*) FROM users")->fetchColumn() === 0) {
@@ -149,11 +206,11 @@ function init_db(): void {
     if ((int) db()->query("SELECT COUNT(*) FROM categories")->fetchColumn() === 0) {
         $defaults = ['Oli', 'Kampas Rem', 'Busi', 'Aki', 'Ban', 'Rantai & Gir', 'Lampu', 'Lainnya'];
         $existing = db()->query("SELECT DISTINCT kategori FROM parts WHERE kategori != ''")->fetchAll(PDO::FETCH_COLUMN);
-        $ins = db()->prepare("INSERT OR IGNORE INTO categories (nama) VALUES (?)");
+        $ins = db()->prepare("INSERT IGNORE INTO categories (nama) VALUES (?)");
         foreach (array_unique(array_merge($defaults, $existing)) as $k) $ins->execute([$k]);
     }
 
-    // Seed pengaturan default (INSERT OR IGNORE -> tidak menimpa pengaturan user)
+    // Seed pengaturan default (INSERT IGNORE -> tidak menimpa pengaturan user)
     $setting_defaults = [
         'nama_bengkel' => 'Bengkel Motor',
         'nib'          => '',
@@ -164,13 +221,14 @@ function init_db(): void {
         'theme_h1'     => '210',
         'theme_h2'     => '232',
     ];
-    $ins = db()->prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
+    $ins = db()->prepare("INSERT IGNORE INTO settings (`key`, `value`) VALUES (?, ?)");
     foreach ($setting_defaults as $k => $v) $ins->execute([$k, $v]);
 
     // Migrasi DB lama: tambahkan kolom diskon pada tabel transactions bila belum ada
-    $cols = db()->query("PRAGMA table_info(transactions)")->fetchAll(PDO::FETCH_COLUMN, 1);
-    if (!in_array('diskon', $cols, true)) {
-        db()->exec("ALTER TABLE transactions ADD COLUMN diskon REAL NOT NULL DEFAULT 0");
+    $has = (int) db()->query("SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'transactions' AND COLUMN_NAME = 'diskon'")->fetchColumn();
+    if ($has === 0) {
+        db()->exec("ALTER TABLE transactions ADD COLUMN diskon DECIMAL(14,2) NOT NULL DEFAULT 0");
     }
 }
 
@@ -185,12 +243,13 @@ function setting(string $key, string $default = ''): string {
     static $cache = null;
     if ($cache === null) {
         $cache = [];
-        foreach (db()->query("SELECT key, value FROM settings") as $r) $cache[$r['key']] = $r['value'];
+        foreach (db()->query("SELECT `key`, `value` FROM settings") as $r) $cache[$r['key']] = $r['value'];
     }
     return $cache[$key] ?? $default;
 }
 function set_setting(string $key, string $value): void {
-    db()->prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    db()->prepare("INSERT INTO settings (`key`, `value`) VALUES (?, ?)
+                   ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)")
         ->execute([$key, $value]);
 }
 
@@ -212,7 +271,7 @@ function lokal(?string $dt, string $format = 'd/m/Y H:i'): string {
 function next_kode(string $prefix, string $table, string $col): string {
     $ym = date('Ym');
     $start = strlen($prefix) + 9; // posisi 1-based digit pertama nomor urut
-    $stmt = db()->prepare("SELECT MAX(CAST(substr($col, $start) AS INTEGER)) FROM $table WHERE $col LIKE ?");
+    $stmt = db()->prepare("SELECT MAX(CAST(SUBSTRING($col, $start) AS UNSIGNED)) FROM $table WHERE $col LIKE ?");
     $stmt->execute(["$prefix-$ym-%"]);
     $next = ((int)$stmt->fetchColumn()) + 1;
     return sprintf('%s-%s-%03d', $prefix, $ym, $next);
@@ -270,7 +329,7 @@ function laporan_transaksi(string $dari, string $sampai): array {
         FROM transactions t
         JOIN customers c ON c.id = t.customer_id
         LEFT JOIN vehicles v ON v.id = t.vehicle_id
-        WHERE date(t.created_at, '+7 hours') BETWEEN ? AND ?
+        WHERE DATE(t.created_at + INTERVAL 7 HOUR) BETWEEN ? AND ?
         ORDER BY t.created_at");
     $stmt->execute([$dari, $sampai]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);

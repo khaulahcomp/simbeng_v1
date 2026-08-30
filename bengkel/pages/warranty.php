@@ -71,7 +71,7 @@ if ($action === 'update_status') {
         } elseif ($status !== 'disetujui') {
             $replacement = null;
         }
-        $db->prepare("UPDATE warranty_claims SET status=?, catatan_teknisi=?, replacement_part_id=?, updated_at=datetime('now') WHERE id=?")
+        $db->prepare("UPDATE warranty_claims SET status=?, catatan_teknisi=?, replacement_part_id=?, updated_at=UTC_TIMESTAMP() WHERE id=?")
            ->execute([$status, $catatan, $replacement, $claim_id]);        $db->commit();
         set_flash('success', 'Status klaim diperbarui.');
     } catch (Exception $e) {

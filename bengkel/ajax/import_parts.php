@@ -32,7 +32,7 @@ foreach ($rows as $r) {
     $kategori = trim((string)($row['kategori'] ?? ''));
     // Kategori baru dari file import otomatis terdaftar di master kategori
     if ($kategori !== '') {
-        $db->prepare("INSERT OR IGNORE INTO categories (nama) VALUES (?)")->execute([$kategori]);
+        $db->prepare("INSERT IGNORE INTO categories (nama) VALUES (?)")->execute([$kategori]);
     }
     $vals = [
         $nama,

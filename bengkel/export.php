@@ -39,7 +39,7 @@ if ($type === 'parts') {
     $dari = _valid_date($_GET['dari'] ?? '') ? $_GET['dari'] : date('Y-m-01');
     $sampai = _valid_date($_GET['sampai'] ?? '') ? $_GET['sampai'] : date('Y-m-d');
     if ($dari > $sampai) [$dari, $sampai] = [$sampai, $dari];
-    $where = "date(sm.created_at, '+7 hours') BETWEEN ? AND ?";
+    $where = "DATE(sm.created_at + INTERVAL 7 HOUR) BETWEEN ? AND ?";
     $params = [$dari, $sampai];
     $labelJenis = 'Semua Pergerakan';
     if ($jenis === 'masuk') { $where .= " AND sm.tipe='masuk'"; $labelJenis = 'Stok Masuk'; }

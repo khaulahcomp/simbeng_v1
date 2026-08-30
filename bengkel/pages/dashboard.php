@@ -1,8 +1,8 @@
 <?php
 // Statistik ringkas dashboard
 $db = db();
-$pendapatan_hari_ini = (float)$db->query("SELECT COALESCE(SUM(grand_total),0) FROM transactions WHERE date(created_at,'+7 hours')=date('now','+7 hours')")->fetchColumn();
-$servis_hari_ini     = (int)$db->query("SELECT COUNT(*) FROM transactions WHERE date(created_at,'+7 hours')=date('now','+7 hours')")->fetchColumn();
+$pendapatan_hari_ini = (float)$db->query("SELECT COALESCE(SUM(grand_total),0) FROM transactions WHERE DATE(created_at + INTERVAL 7 HOUR)=DATE(UTC_TIMESTAMP() + INTERVAL 7 HOUR)")->fetchColumn();
+$servis_hari_ini     = (int)$db->query("SELECT COUNT(*) FROM transactions WHERE DATE(created_at + INTERVAL 7 HOUR)=DATE(UTC_TIMESTAMP() + INTERVAL 7 HOUR)")->fetchColumn();
 $servis_total        = (int)$db->query("SELECT COUNT(*) FROM transactions WHERE status='selesai'")->fetchColumn();
 $stok_menipis        = (int)$db->query("SELECT COUNT(*) FROM parts WHERE stok <= stok_min")->fetchColumn();
 $total_pelanggan     = (int)$db->query("SELECT COUNT(*) FROM customers")->fetchColumn();

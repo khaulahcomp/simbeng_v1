@@ -38,8 +38,8 @@ $sql = "SELECT t.*, c.nama AS customer_nama, v.plat_nomor FROM transactions t
         JOIN customers c ON c.id=t.customer_id LEFT JOIN vehicles v ON v.id=t.vehicle_id";
 $where = []; $params = [];
 if ($q !== '') { $where[] = "(t.no_nota LIKE ? OR c.nama LIKE ? OR v.plat_nomor LIKE ?)"; $params = array_merge($params, ["%$q%","%$q%","%$q%"]); }
-if ($dari !== '') { $where[] = "date(t.created_at,'+7 hours') >= ?"; $params[] = $dari; }
-if ($sampai !== '') { $where[] = "date(t.created_at,'+7 hours') <= ?"; $params[] = $sampai; }
+if ($dari !== '') { $where[] = "DATE(t.created_at + INTERVAL 7 HOUR) >= ?"; $params[] = $dari; }
+if ($sampai !== '') { $where[] = "DATE(t.created_at + INTERVAL 7 HOUR) <= ?"; $params[] = $sampai; }
 if ($where) $sql .= " WHERE " . implode(' AND ', $where);
 $sql .= " ORDER BY t.id DESC LIMIT 200";
 $stmt = $db->prepare($sql); $stmt->execute($params);
