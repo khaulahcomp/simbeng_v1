@@ -86,3 +86,6 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# Preview-only MariaDB data (jangan commit)
+.mariadb_data/

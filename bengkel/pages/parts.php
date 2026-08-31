@@ -66,6 +66,23 @@ $categories = $db->query("SELECT nama FROM categories ORDER BY nama")->fetchAll(
         <input type="hidden" name="action" value="save">
         <input type="hidden" name="id" value="<?= $edit['id'] ?? 0 ?>">
         <div class="row g-2">
+          <div class="col-12 mb-2">
+            <label class="form-label small mb-1">
+              <i class="bi bi-cloud-download me-1"></i>Cari dari hargasukucadang.online
+              <span class="text-muted" style="font-size:11px">— klik hasil untuk mengisi Kode &amp; Nama</span>
+            </label>
+            <div class="input-group input-group-sm">
+              <select id="hscField" class="form-select flex-grow-0" style="max-width:78px" data-testid="hsc-field">
+                <option value="nama">Nama</option>
+                <option value="kode">Kode</option>
+                <option value="tipe">Tipe</option>
+              </select>
+              <input type="text" id="hscQuery" class="form-control" placeholder="mis. shock, kampas rem, 3XP..." autocomplete="off" data-testid="hsc-query">
+              <button type="button" id="hscSearchBtn" class="btn btn-outline-primary" data-testid="hsc-search-btn"><i class="bi bi-search"></i></button>
+            </div>
+            <div id="hscResults" class="list-group mt-1" style="max-height:230px;overflow:auto;display:none" data-testid="hsc-results"></div>
+            <div id="hscMsg" class="small text-muted mt-1" style="display:none" data-testid="hsc-msg"></div>
+          </div>
           <div class="col-6 mb-2"><label class="form-label small">Kode Sparepart</label>
             <input name="kode" class="form-control form-control-sm" required value="<?= esc($edit['kode'] ?? '') ?>" data-testid="part-kode"></div>
           <div class="col-6 mb-2"><label class="form-label small">Barcode <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-bs-toggle="modal" data-bs-target="#scanModal" data-scan-target="part-barcode" data-testid="part-scan-btn"><i class="bi bi-upc-scan"></i></button></label>
@@ -194,4 +211,69 @@ function downloadTemplate() {
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   a.download = 'template_sparepart.csv'; a.click();
 }
+
+// ============================================================
+// Cari sparepart dari hargasukucadang.online -> isi Kode & Nama otomatis
+// ============================================================
+(function () {
+  const q = document.getElementById('hscQuery');
+  const field = document.getElementById('hscField');
+  const btn = document.getElementById('hscSearchBtn');
+  const box = document.getElementById('hscResults');
+  const msg = document.getElementById('hscMsg');
+  if (!q || !btn) return;
+
+  const form = document.querySelector('form[data-testid="part-form"]');
+  const kodeInput = form ? form.querySelector('[name="kode"]') : null;
+  const namaInput = form ? form.querySelector('[name="nama"]') : null;
+
+  function showMsg(t, cls) { msg.className = 'small mt-1 ' + (cls || 'text-muted'); msg.textContent = t; msg.style.display = t ? 'block' : 'none'; }
+  function clearResults() { box.innerHTML = ''; box.style.display = 'none'; }
+  function esc(s) { return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  async function doSearch() {
+    const term = q.value.trim();
+    if (term.length < 2) { showMsg('Kata kunci minimal 2 karakter.', 'text-danger'); clearResults(); return; }
+    showMsg('Mencari di hargasukucadang.online...'); clearResults(); btn.disabled = true;
+    try {
+      const url = 'ajax/lookup_hsc.php?field=' + encodeURIComponent(field.value) + '&q=' + encodeURIComponent(term);
+      const r = await fetch(url, { headers: { 'X-Requested-With': 'fetch' } });
+      const data = await r.json();
+      btn.disabled = false;
+      if (data.error) { showMsg(data.error, 'text-danger'); return; }
+      const rows = data.results || [];
+      if (!rows.length) { showMsg('Tidak ada hasil untuk "' + term + '".', 'text-warning'); return; }
+      showMsg(rows.length + ' hasil. Klik salah satu untuk memakainya.', 'text-success');
+      box.style.display = 'block';
+      rows.forEach(function (it) {
+        const st = (it.status || '').toUpperCase();
+        const badge = st === 'AKTIF' ? 'success' : (st === 'STOP' ? 'secondary' : 'info');
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'list-group-item list-group-item-action py-1';
+        el.setAttribute('data-testid', 'hsc-result-item');
+        el.innerHTML =
+          '<div class="d-flex justify-content-between align-items-center">' +
+          '<span class="fw-semibold small">' + esc(it.kode) + '</span>' +
+          '<span class="badge bg-' + badge + '" style="font-size:10px">' + esc(it.status || '-') + '</span></div>' +
+          '<div class="small">' + esc(it.nama) + '</div>' +
+          '<div class="text-muted" style="font-size:10px">' + (it.tipe ? ('Tipe: ' + esc(it.tipe) + ' &bull; ') : '') + 'Harga ref: ' + esc(it.harga || '-') + '</div>';
+        el.addEventListener('click', function () {
+          if (kodeInput) kodeInput.value = it.kode;
+          if (namaInput) namaInput.value = it.nama;
+          clearResults();
+          showMsg('Terisi: ' + it.kode + ' - ' + it.nama, 'text-success');
+          if (namaInput) namaInput.focus();
+        });
+        box.appendChild(el);
+      });
+    } catch (e) {
+      btn.disabled = false;
+      showMsg('Gagal memuat hasil. Periksa koneksi internet server.', 'text-danger');
+    }
+  }
+
+  btn.addEventListener('click', doSearch);
+  q.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } });
+})();
 </script>
