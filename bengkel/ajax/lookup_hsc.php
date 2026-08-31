@@ -1,40 +1,79 @@
 <?php
 // ============================================================
-// lookup_hsc.php - Proxy pencarian sparepart ke hargasukucadang.online
-// Mengembalikan JSON: { results: [ {kode, nama, harga, status, tipe}, ... ] }
-// Dipakai oleh form Tambah/Edit Sparepart untuk mengisi Kode & Nama otomatis.
+// lookup_hsc.php - Proxy + cache pencarian sparepart hargasukucadang.online
+// Mengembalikan JSON: { results: [ {kode,nama,harga,status,tipe} ], source, offline }
+//  - source = 'live'  : hasil segar dari situs sumber (sekaligus disimpan ke katalog lokal)
+//  - source = 'local' : situs sumber tak terjangkau -> pakai katalog lokal (offline=true)
 // ============================================================
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
+init_db();
 header('Content-Type: application/json; charset=utf-8');
 
 $field = $_GET['field'] ?? 'nama';           // nama | kode | tipe
 $q     = trim($_GET['q'] ?? '');
 
 if ($q === '' || mb_strlen($q) < 2) {
-    echo json_encode(['results' => [], 'error' => 'Kata kunci minimal 2 karakter.']);
+    echo json_encode(['results' => [], 'source' => 'none', 'error' => 'Kata kunci minimal 2 karakter.']);
     exit;
 }
 
-// Susun payload sesuai form situs sumber; field tak-terpakai diisi placeholder default
-$payload = [
-    'kodepart' => '--Kode Part--',
-    'namapart' => '--Nama Part--',
-    'tipe'     => '--Motor--',
-    'submit'   => '',
-];
+$db = db();
+
+// 1) Hasil dari katalog lokal (instan, tahan-offline)
+$local = catalog_search($db, $field, $q);
+
+// 2) Coba ambil data terbaru dari situs sumber
+$payload = ['kodepart' => '--Kode Part--', 'namapart' => '--Nama Part--', 'tipe' => '--Motor--', 'submit' => ''];
 if ($field === 'kode')      $payload['kodepart'] = $q;
 elseif ($field === 'tipe')  $payload['tipe']     = $q;
 else                        $payload['namapart'] = $q;
 
 $html = hsc_fetch('https://hargasukucadang.online/index.php', $payload);
-if ($html === null) {
-    echo json_encode(['results' => [], 'error' => 'Gagal menghubungi hargasukucadang.online. Pastikan server terhubung internet, lalu coba lagi.']);
+
+if ($html !== null) {
+    $live = hsc_parse($html);
+    if ($live) { try { catalog_upsert($db, $live); } catch (Exception $e) { /* abaikan gagal cache */ } }
+    // Gabungkan: utamakan hasil live, tambahkan item katalog lokal yang belum ada
+    $seen = [];
+    foreach ($live as $r) $seen[$r['kode']] = true;
+    $merged = $live;
+    foreach ($local as $r) {
+        if (empty($seen[$r['kode']])) { $merged[] = $r; }
+        if (count($merged) >= 40) break;
+    }
+    echo json_encode(['results' => array_slice($merged, 0, 40), 'source' => 'live']);
     exit;
 }
 
-echo json_encode(['results' => hsc_parse($html)]);
+// 3) Situs sumber tak terjangkau -> pakai katalog lokal
+echo json_encode([
+    'results' => $local,
+    'source'  => 'local',
+    'offline' => true,
+    'error'   => $local ? null : 'Situs hargasukucadang.online sedang tidak dapat dihubungi, dan belum ada data di katalog lokal untuk kata kunci ini.',
+]);
+
+// ------------------------------------------------------------
+// Cari di katalog lokal berdasarkan kolom (whitelist).
+function catalog_search(PDO $db, string $field, string $q): array {
+    $col = $field === 'kode' ? 'kode' : ($field === 'tipe' ? 'tipe' : 'nama');
+    $stmt = $db->prepare("SELECT kode, nama, harga, status, tipe FROM part_catalog WHERE $col LIKE ? ORDER BY kode LIMIT 40");
+    $stmt->execute(["%$q%"]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// Simpan/segarkan hasil ke katalog lokal (upsert berdasarkan kode).
+function catalog_upsert(PDO $db, array $rows): void {
+    $ins = $db->prepare("INSERT INTO part_catalog (kode, nama, harga, status, tipe)
+        VALUES (?,?,?,?,?)
+        ON DUPLICATE KEY UPDATE nama=VALUES(nama), harga=VALUES(harga), status=VALUES(status), tipe=VALUES(tipe), updated_at=CURRENT_TIMESTAMP");
+    foreach ($rows as $r) {
+        if (($r['kode'] ?? '') === '') continue;
+        $ins->execute([$r['kode'], $r['nama'] ?? '', $r['harga'] ?? '', $r['status'] ?? '', $r['tipe'] ?? '']);
+    }
+}
 
 // ------------------------------------------------------------
 // Ambil HTML hasil pencarian (POST). Utamakan cURL, fallback file_get_contents.
@@ -61,7 +100,6 @@ function hsc_fetch(string $url, array $post): ?string {
         return null;
     }
 
-    // Fallback bila cURL tidak tersedia
     $ctx = stream_context_create([
         'http' => [
             'method'  => 'POST',
@@ -105,7 +143,7 @@ function hsc_parse(string $html): array {
             'status' => $get(3),
             'tipe'   => $get(4),
         ];
-        if (count($out) >= 30) break;
+        if (count($out) >= 40) break;
     }
     return $out;
 }

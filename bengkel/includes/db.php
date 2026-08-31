@@ -196,6 +196,19 @@ function init_db(): void {
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) $eng");
 
+    // Katalog part hasil pencarian dari hargasukucadang.online (cache lokal)
+    // agar pencarian tetap cepat & dapat dipakai walau situs sumber sedang down.
+    $db->exec("CREATE TABLE IF NOT EXISTS part_catalog (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        kode VARCHAR(100) NOT NULL UNIQUE,
+        nama VARCHAR(255) NOT NULL DEFAULT '',
+        harga VARCHAR(50) NOT NULL DEFAULT '',
+        status VARCHAR(50) NOT NULL DEFAULT '',
+        tipe VARCHAR(100) NOT NULL DEFAULT '',
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (nama), INDEX (tipe)
+    ) $eng");
+
     // Seed akun admin default (admin / admin123) jika tabel users kosong
     if ((int) db()->query("SELECT COUNT(*) FROM users")->fetchColumn() === 0) {
         $stmt = db()->prepare("INSERT INTO users (username, password_hash, nama, role) VALUES (?,?,?,?)");

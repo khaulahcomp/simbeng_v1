@@ -243,7 +243,11 @@ function downloadTemplate() {
       if (data.error) { showMsg(data.error, 'text-danger'); return; }
       const rows = data.results || [];
       if (!rows.length) { showMsg('Tidak ada hasil untuk "' + term + '".', 'text-warning'); return; }
-      showMsg(rows.length + ' hasil. Klik salah satu untuk memakainya.', 'text-success');
+      if (data.offline) {
+        showMsg('Situs sumber sedang offline. Menampilkan ' + rows.length + ' hasil dari katalog lokal. Klik untuk memakai.', 'text-warning');
+      } else {
+        showMsg(rows.length + ' hasil. Klik salah satu untuk memakainya.', 'text-success');
+      }
       box.style.display = 'block';
       rows.forEach(function (it) {
         const st = (it.status || '').toUpperCase();

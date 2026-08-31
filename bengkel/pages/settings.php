@@ -133,6 +133,15 @@ $h2 = (int)setting('theme_h2', '232');
       <?php endif; ?>
     </div></div>
   </div>
+
+  <div class="col-lg-6">
+    <div class="card table-card"><div class="card-body">
+      <h2 class="h6 mb-3"><i class="bi bi-database-down me-1"></i>Backup Database</h2>
+      <p class="small text-muted">Unduh cadangan seluruh data (pelanggan, sparepart, transaksi, garansi, pengaturan, dll) dalam berkas <code>.sql</code>. Simpan berkas ini di tempat aman; dapat di-import kembali melalui phpMyAdmin bila diperlukan.</p>
+      <a href="backup.php" class="btn btn-sm btn-primary" data-testid="backup-db-btn"><i class="bi bi-download me-1"></i>Unduh Backup (.sql)</a>
+      <p class="small text-muted mt-2 mb-0"><i class="bi bi-info-circle me-1"></i>Disarankan mengunduh backup secara berkala.</p>
+    </div></div>
+  </div>
 </div>
 
 <script>
